@@ -29,6 +29,7 @@ pub struct RegisterInviteKeyPayload {
 pub struct RegisterInviteKeyParams {
     #[validate(custom = "validate_caip10_account")]
     account: String,
+    #[validate(length(max = 64))]
     invite_key: String,
 }
 
@@ -59,8 +60,30 @@ pub async fn handler(
 
     let claims: InviteKeyClaims = jwt.claims;
     let account = extract_did_data(&claims.pkh, DID_METHOD_PKH)?;
+
+    let account = if account.starts_with("eip155") {
+        account.to_lowercase()
+    } else {
+        account.to_string()
+    };
+
+    let identity_keys = state
+        .keys_persitent_storage
+        .get_identity_keys(&account)
+        .await?;
+
+    if !identity_keys.contains(&claims.iss) {
+        info!(
+            "Failure - Register invite with jwt: {:?}, error: Invalid identity key binding",
+            payload.id_auth
+        );
+        return Err(error::Error::Authorization(
+            "Invalid identity key for account".to_string(),
+        ));
+    }
+
     let params = RegisterInviteKeyParams {
-        account: account.to_string(),
+        account: account.clone(),
         invite_key: claims.sub,
     };
 

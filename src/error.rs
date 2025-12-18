@@ -43,6 +43,9 @@ pub enum Error {
     #[error(transparent)]
     Cacao(#[from] CacaoError),
 
+    #[error("Authorization error: {0}")]
+    Authorization(String),
+
     #[error("Blockchain API error: {0}")]
     BlockchainApi(blockchain_api::Error),
 
@@ -62,6 +65,20 @@ impl IntoResponse for Error {
                 },
             ),
             Error::Store(e) => match e {
+                StoreError::Forbidden(ref e) => crate::handlers::Response::new_failure(
+                    StatusCode::FORBIDDEN,
+                    ResponseError {
+                        name: "forbidden".to_string(),
+                        message: e.to_string(),
+                    },
+                ),
+                StoreError::NonceAlreadyUsed(ref nonce) => crate::handlers::Response::new_failure(
+                    StatusCode::BAD_REQUEST, // Or Forbidden
+                    ResponseError {
+                        name: "nonce_used".to_string(),
+                        message: format!("Nonce {} has already been used", nonce),
+                    },
+                ),
                 StoreError::Database(e) => crate::handlers::Response::new_failure(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ResponseError {
@@ -107,6 +124,13 @@ impl IntoResponse for Error {
                     name: "unknown_error".to_string(),
                     message: "This error should not have occurred. Please file an issue at: https://github.com/walletconnect/keys-server".to_string(),
                 }
+            ),
+            Error::Authorization(e) => crate::handlers::Response::new_failure(
+                StatusCode::FORBIDDEN,
+                ResponseError {
+                    name: "authorization".to_string(),
+                    message: e.to_string(),
+                },
             ),
         }.into_response();
 

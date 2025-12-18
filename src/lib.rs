@@ -15,6 +15,7 @@ use {
     tower::ServiceBuilder,
     tower_http::{
         cors::CorsLayer,
+        limit::RequestBodyLimitLayer,
         request_id::MakeRequestUuid,
         trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
         ServiceBuilderExt,
@@ -103,6 +104,9 @@ pub async fn bootstrap(
         .allow_origin("*".parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST, Method::DELETE]);
 
+    // Limit body size to 4KB
+    let limit_layer = RequestBodyLimitLayer::new(4096);
+
     let app = Router::new()
         .route("/health", get(handlers::health::handler))
         .route(
@@ -118,7 +122,8 @@ pub async fn bootstrap(
                 .get(handlers::invite::resolve::handler),
         )
         .layer(global_middleware)
-        .layer(cors_layer);
+        .layer(cors_layer)
+        .layer(limit_layer);
     let app = if let Some(resolver) = geoip_resolver {
         app.layer(GeoBlockLayer::new(
             resolver.clone(),

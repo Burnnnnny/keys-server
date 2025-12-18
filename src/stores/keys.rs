@@ -48,6 +48,28 @@ pub trait KeysPersistentStorage: 'static + std::fmt::Debug + Send + Sync {
     async fn remove_invite_key(&self, account: &str) -> Result<(), StoreError>;
     async fn retrieve_invite_key(&self, account: &str) -> Result<String, StoreError>;
     async fn remove(&self, account: &str) -> Result<(), StoreError>;
+    async fn check_and_store_nonce(
+        &self,
+        nonce: &str,
+        exp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError>;
+    async fn get_identity_keys(&self, account: &str) -> Result<Vec<String>, StoreError>;
+}
+
+#[derive(Debug, Model, Serialize, Deserialize, PartialEq, Eq)]
+#[model(
+    collection_name = "used_nonces",
+    index(keys = r#"doc!{"nonce": 1}"#, options = r#"doc!{"unique": true}"#),
+    index(
+        keys = r#"doc!{"exp": 1}"#,
+        options = r#"doc!{"expireAfterSeconds": 0}"#
+    )
+)]
+pub struct MongoUsedNonce {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub nonce: String,
+    pub exp: bson::DateTime,
 }
 
 #[derive(Debug, Model, Serialize, Deserialize, PartialEq, Eq)]
@@ -305,5 +327,65 @@ impl KeysPersistentStorage for MongoPersistentStorage {
                 account.to_string(),
             )),
         }
+    }
+
+    async fn check_and_store_nonce(
+        &self,
+        nonce: &str,
+        exp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), StoreError> {
+        let used_nonce = MongoUsedNonce {
+            id: None,
+            nonce: nonce.to_string(),
+            exp: bson::DateTime::from_chrono(exp),
+        };
+
+        match used_nonce.save(&self.db, None).await {
+            Ok(_) => Ok(()),
+            Err(wither::WitherError::Mongo(e)) => {
+                if e.kind.as_ref()
+                    == &mongodb::error::ErrorKind::Command(mongodb::error::CommandError {
+                        code: 11000,
+                        ..
+                    })
+                    || e.to_string().contains("11000")
+                {
+                    Err(StoreError::NonceAlreadyUsed(nonce.to_string()))
+                } else {
+                    Err(StoreError::Database(wither::WitherError::Mongo(e)))
+                }
+            }
+            Err(e) => Err(StoreError::Database(e)),
+        }
+    }
+
+    async fn get_identity_keys(&self, account: &str) -> Result<Vec<String>, StoreError> {
+        async fn query(db: &Database, account: &str) -> wither::Result<Option<MongoKeys>> {
+            let filter = doc! {
+                "account": account,
+            };
+            MongoKeys::find_one(db, Some(filter), None).await
+        }
+
+        let keys = match query(&self.db, account).await? {
+            Some(k) => k,
+            None => {
+                if account.starts_with("eip155") {
+                    let lowercase_account = account.to_lowercase();
+                    match query(&self.db, &lowercase_account).await? {
+                        Some(k) => k,
+                        None => return Ok(vec![]),
+                    }
+                } else {
+                    return Ok(vec![]);
+                }
+            }
+        };
+
+        Ok(keys
+            .identities
+            .into_iter()
+            .map(|i| i.identity_key)
+            .collect())
     }
 }

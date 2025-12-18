@@ -50,6 +50,54 @@ pub async fn handler(
             error
         })?;
 
+    // Validating exp, nbf and nonce
+    let now = chrono::Utc::now();
+    let p = &cacao.p;
+
+    let exp_time = if let Some(exp_str) = &p.exp {
+        let exp = chrono::DateTime::parse_from_rfc3339(exp_str)
+            .map_err(|_| error::Error::Validation(validator::ValidationErrors::new()))?
+            .with_timezone(&chrono::Utc);
+
+        if exp < now {
+            info!("Failure - Register identity: CACAO expired");
+            return Err(error::Error::Validation(validator::ValidationErrors::new()));
+        }
+        Some(exp)
+    } else {
+        None
+    };
+
+    if let Some(nbf_str) = &p.nbf {
+        let nbf = chrono::DateTime::parse_from_rfc3339(nbf_str)
+            .map_err(|_| error::Error::Validation(validator::ValidationErrors::new()))?
+            .with_timezone(&chrono::Utc);
+
+        if nbf > now {
+            info!("Failure - Register identity: CACAO nbf in future");
+            return Err(error::Error::Validation(validator::ValidationErrors::new()));
+        }
+    }
+
+    if let Some(nonce) = &p.nonce {
+        if let Some(exp) = exp_time {
+            state
+                .keys_persitent_storage
+                .check_and_store_nonce(nonce, exp)
+                .await
+                .map_err(|e| match e {
+                    crate::stores::StoreError::NonceAlreadyUsed(_) => {
+                        info!("Failure - Register identity: Nonce reuse detected");
+                        error::Error::Authorization("Nonce already used".to_string())
+                    }
+                    _ => error::Error::Store(e),
+                })?;
+        } else {
+            warn!("Failure - Register identity: Nonce present but exp missing");
+            return Err(error::Error::Validation(validator::ValidationErrors::new()));
+        }
+    }
+
     let identity_key = cacao.p.identity_key()?;
     let account = cacao.p.caip_10_address()?;
     let params = RegisterIdentityParams {

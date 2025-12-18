@@ -3,8 +3,8 @@
 # Build args
 #
 ################################################################################
-ARG                 base="rust:buster"
-ARG                 runtime="debian:buster-slim"
+ARG                 base="rust:1-bookworm"
+ARG                 runtime="debian:bookworm-slim"
 ARG                 bin="keyserver"
 ARG                 version="unknown"
 ARG                 sha="unknown"

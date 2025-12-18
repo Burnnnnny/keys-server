@@ -62,8 +62,29 @@ pub async fn handler(
     let claims: InviteKeyClaims = jwt.claims;
     let account = extract_did_data(&claims.pkh, DID_METHOD_PKH)?;
 
+    let account = if account.starts_with("eip155") {
+        account.to_lowercase()
+    } else {
+        account.to_string()
+    };
+
+    let identity_keys = state
+        .keys_persitent_storage
+        .get_identity_keys(&account)
+        .await?;
+
+    if !identity_keys.contains(&claims.iss) {
+        info!(
+            "Failure - Unregister invite with jwt: {:?}, error: Invalid identity key binding",
+            payload.id_auth
+        );
+        return Err(error::Error::Authorization(
+            "Invalid identity key for account".to_string(),
+        ));
+    }
+
     let params = UnregisterInviteKeyParams {
-        account: account.to_string(),
+        account: account.clone(),
     };
     params.validate().map_err(|error| {
         warn!(

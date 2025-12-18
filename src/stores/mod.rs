@@ -6,6 +6,9 @@ pub enum StoreError {
     #[error("Cannot find {0} with specified identifier {1}")]
     NotFound(String, String),
 
+    #[error("Nonce {0} has already been used")]
+    NonceAlreadyUsed(String),
+
     #[error(transparent)]
     Database(#[from] wither::WitherError),
 }
