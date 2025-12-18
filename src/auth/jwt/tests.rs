@@ -13,6 +13,10 @@ impl JwtClaims for TestClaims {
     fn is_valid(&self) -> bool {
         true
     }
+
+    fn get_exp(&self) -> u64 {
+        self.exp
+    }
 }
 
 impl JwtVerifierByIssuer for TestClaims {
@@ -34,6 +38,10 @@ struct TestInviteKeyMockClaims {
 impl JwtClaims for TestInviteKeyMockClaims {
     fn is_valid(&self) -> bool {
         true
+    }
+
+    fn get_exp(&self) -> u64 {
+        self.exp
     }
 }
 

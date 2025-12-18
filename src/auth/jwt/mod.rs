@@ -114,6 +114,8 @@ impl JwtHeader {
 
 pub trait JwtClaims: DeserializeOwned + Serialize + JwtVerifierByIssuer {
     fn is_valid(&self) -> bool;
+    // [Security] All claims must return their expiration time
+    fn get_exp(&self) -> u64;
 }
 
 impl<T: JwtClaims> Jwt<T> {
@@ -131,13 +133,28 @@ impl<T: JwtClaims> Jwt<T> {
     /// Verify the JWT
     /// Errors if the JWT is invalid
     pub fn verify(&self) -> Result<(), JwtError> {
-        // // Header validity checks.
+        // Header validity checks.
         if !self.header.is_valid() {
             return Err(JwtError::Header);
         }
 
         // Token validity checks.
         if !self.claims.is_valid() {
+            return Err(JwtError::Claims);
+        }
+
+        // [Security] Verify expiration and max lifetime
+        let now = chrono::Utc::now().timestamp() as u64;
+        let exp = self.claims.get_exp();
+
+        // 1. Check expiration (Replay Attack Prevention)
+        if exp <= now {
+            return Err(JwtError::Claims);
+        }
+
+        // 2. Check max lifetime (e.g., 1 hour) (Infinite Token Prevention)
+        const MAX_TTL: u64 = 3600;
+        if exp > now + MAX_TTL {
             return Err(JwtError::Claims);
         }
 

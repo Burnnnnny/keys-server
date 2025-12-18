@@ -32,14 +32,31 @@ pub struct InviteKeyClaims {
 
 impl JwtClaims for InviteKeyClaims {
     fn is_valid(&self) -> bool {
-        // TODO: Add validation:
-        // aud must be equal this dns?
-        // exp must be in future
-        // iat must be in past
-        // iss must be valid did:key
-        // pkh must be valid did:pkh
+        // 1. Check if token is issued in the future (with 5 seconds leeway)
+        let now = chrono::Utc::now().timestamp() as usize;
+        if self.iat > now + 5 {
+            return false;
+        }
+
+        // 2. Check not before (nbf)
+        if let Some(nbf) = self.nbf {
+             if nbf > now {
+                 return false;
+             }
+        }
+        
+        // 3. Check max lifetime (e.g., 1 hour = 3600 seconds)
+        // If exp - iat is too large, reject.
+        const MAX_LIFETIME: usize = 3600; 
+        if self.exp.saturating_sub(self.iat) > MAX_LIFETIME {
+            return false;
+        }
 
         did::validate_x25519(&self.sub)
+    }
+
+    fn get_exp(&self) -> u64 {
+        self.exp as u64
     }
 }
 

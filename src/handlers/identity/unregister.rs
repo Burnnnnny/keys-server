@@ -49,6 +49,10 @@ impl JwtClaims for UnregisterIdentityKeyClaims {
         // pkh must be valid did:pkh
         self.act == "unregister_identity"
     }
+
+    fn get_exp(&self) -> u64 {
+        self.exp as u64
+    }
 }
 
 impl JwtVerifierByIssuer for UnregisterIdentityKeyClaims {
